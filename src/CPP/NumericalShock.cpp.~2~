@@ -1,0 +1,341 @@
+#include "Riemann.hh"
+
+using namespace std;
+
+NumericalSHOCK::NumericalSHOCK()
+{
+  //clear the variables
+  xL=xC=xR=0.0;
+  rhoL=uL=pL=rhoR=uR=pR=0.0;
+  rho_star=u_star=p_star=0.0;
+  rho_star_L=rho_star_R=0.0;
+  cL=cR=c=0.0;
+  c_star_L=c_star_R=0.0;
+  sL=sR=sHL=sTL=sHR=sTR=0.0;
+
+
+  //clear the arrays
+  Mx=0;
+  Mq1=0;  Mq2=0; Mq3=0; Mq4=0;
+  MF1=0;  MF2=0; MF3=0; 
+  
+}
+
+
+
+NumericalSHOCK::NumericalSHOCK(REAL qL1, REAL qL2, REAL qL3, REAL qR1, REAL qR2, REAL qR3)
+{
+  //clear the variables
+  xL=xC=xR=0.0;
+  rhoL=uL=pL=rhoR=uR=pR=0.0;
+  rho_star=u_star=p_star=0.0;
+  rho_star_L=rho_star_R=0.0;
+  cL=cR=c=0.0;
+  c_star_L=c_star_R=0.0;
+  sL=sR=sHL=sTL=sHR=sTR=0.0;
+
+  //clear the arrays
+  Mx=0;
+  Mq1=0;  Mq2=0; Mq3=0; Mq4=0;
+  MF1=0;  MF2=0; MF3=0; 
+
+  //set the left state
+  rhoL=qL1;
+  uL=qL2;
+  pL=qL3;
+  eL=pL/G9/rhoL;
+
+  //set the right state
+  rhoR=qR1;
+  uR=qR2;
+  pR=qR3;
+  eR=pR/G9/rhoR;
+
+  //compute speed of sound
+  cL=sqrt(GAMMA*pL/rhoL);
+  cR=sqrt(GAMMA*pR/rhoR);
+
+  //compute du=uR-uL;
+  du=uR-uL;
+}
+
+//! the destructor
+/*! 
+  
+ */
+NumericalSHOCK::~NumericalSHOCK()
+{
+  if(Mx) delete[] Mx; Mx=0;
+
+  if(Mq1) delete[] Mq1; Mq1=0; 
+  if(Mq2) delete[] Mq2; Mq2=0; 
+  if(Mq3) delete[] Mq3; Mq3=0; 
+  if(Mq4) delete[] Mq4; Mq4=0; 
+
+  if(MF1) delete[] MF1; MF1=0; 
+  if(MF2) delete[] MF2; MF2=0; 
+  if(MF3) delete[] MF3; MF3=0; 
+
+  cout<<"Done in NumericalSHOCK"<<endl;
+} 
+
+void NumericalSHOCK::MeshSet()
+{
+  N=401;
+  dx=1.0/(N-1);
+
+  Mx =new REAL[N]; 
+  
+  for(INTEGER i=0;i<N;i++)
+    Mx[i]=i*dx-0.5;
+
+
+  Mq1=new REAL[N]; 
+  Mq2=new REAL[N]; 
+  Mq3=new REAL[N]; 
+  Mq4=new REAL[N]; 
+
+  MF1=new REAL[N-1]; 
+  MF2=new REAL[N-1]; 
+  MF3=new REAL[N-1]; 
+
+
+}
+
+void NumericalSHOCK::Init()
+{
+  for(INTEGER i=0;i<N;i++){
+    if(Mx[i]<=0.0){
+      Mq1[i]=rhoL;
+      Mq2[i]=rhoL*uL;
+      Mq3[i]=pL/G9+0.5*rhoL*uL*uL;
+      Mq4[i]=eL;
+    }
+    else{
+      Mq1[i]=rhoR;
+      Mq2[i]=rhoR*uR;
+      Mq3[i]=pR/G9+0.5*rhoR*uR*uR;
+      Mq4[i]=eR;     
+    }
+  }
+}
+
+
+void NumericalSHOCK::Out()
+{
+  ofstream ft;
+  ft.open("Sod_X_Numerical.dat");
+  for(INTEGER i=0;i<N;i++){
+    ft<<Mx[i]<<" "
+      <<Mq1[i]<<" "
+      <<Mq2[i]/Mq1[i]<<" "
+      <<G9*(Mq3[i]-0.5*Mq2[i]*Mq2[i]/Mq1[i])<<" "
+      <<Mq4[i]<<endl;
+  }
+  ft.close();
+
+}
+
+
+void NumericalSHOCK::Flux()
+{
+  //left boundary condition - transmissive
+  Mq1[0]=Mq1[1];
+  Mq2[0]=Mq2[1];
+  Mq3[0]=Mq3[1];
+  //right boundary condition - transmissive
+  Mq1[N-1]=Mq1[N-2];
+  Mq2[N-1]=Mq2[N-2];
+  Mq3[N-1]=Mq3[N-2];
+
+
+  REAL qL1,qL2,qL3;             /*!< Left side, density,velocity,pressure */
+  REAL qR1,qR2,qR3;             /*!< Right side, density,velocity,pressure */
+
+  //loop the faces 
+  for(INTEGER i=0;i<N-1;i++)
+    {
+      qL1=Mq1[i];   
+      qL2=Mq2[i]/qL1;  
+      qL3=G9*(Mq3[i]-0.5*qL1*qL2*qL2);
+
+      qR1=Mq1[i+1];  
+      qR2=Mq2[i+1]/qR1;  
+      qR3=G9*(Mq3[i+1]-0.5*qR1*qR2*qR2);
+
+      //FaceFluxGudunov(qL1,qL2,qL3,qR1,qR2,qR3,MF1[i],MF2[i],MF3[i]);
+      FaceFluxHLLC(qL1,qL2,qL3,qR1,qR2,qR3,MF1[i],MF2[i],MF3[i]);
+    }
+}
+
+void NumericalSHOCK::FaceFluxGudunov(REAL qL1, REAL qL2, REAL qL3, 
+                                     REAL qR1, REAL qR2, REAL qR3,
+                                     REAL& MF1, REAL& MF2, REAL& MF3)
+{
+  REAL q1,q2,q3,q4;             /*!< density,velocity,pressure,internal energy */
+  LocalRiemann(qL1,qL2,qL3,qR1,qR2,qR3,q1,q2,q3,q4);
+  MF1=q1*q2;
+  MF2=q1*q2*q2+q3;
+  MF3=(q3*GAMMA/G9+0.5*q1*q2*q2)*q2;
+}
+
+//! compute the interface flux F
+/*! 
+  
+  \param qL1 left state density
+  \param qL2 left state velocity
+  \param qL3 left state pressure
+  \param qR1 right state density
+  \param qR2 right state velocity
+  \param qR3 right state pressure
+  \param MF1 flux for density
+  \param MF2 flux for moment
+  \param MF3 flux for total energy
+*/
+void NumericalSHOCK::FaceFluxHLLC(REAL rhoL, REAL uL, REAL pL, 
+                                     REAL rhoR, REAL uR, REAL pR,
+                                     REAL& MF1, REAL& MF2, REAL& MF3)
+{
+  //0->basic variables for left and right state
+  REAL cL=sqrt(GAMMA*pL/rhoL);  /*!< sound speed */
+  REAL HL=GAMMA/(GAMMA-1)*pL/rhoL+0.5*uL*uL; /*!< enthapy */
+
+  REAL cR=sqrt(GAMMA*pR/rhoR);   /*!< soud speed */
+  REAL HR=GAMMA/(GAMMA-1)*pR/rhoR+0.5*uR*uR; /*!< enthapy */
+
+  //1->Roe's average
+  REAL f=sqrt(rhoR/rhoL);
+  REAL Au=(uL+uR*f)/(1+f);
+  REAL AH=(HL+HR*f)/(1+f);
+  REAL Ac=sqrt((GAMMA-1)*(AH-0.5*uL*uL));
+
+  //2->Normal velocity
+  REAL AU=Au;
+
+  //3->Left state wave speed
+  REAL UL=uL;
+  REAL SL=min(UL-cL,AU-Ac);
+
+  //4->Right state wave speed
+  REAL UR=uR;
+  REAL SR=max(UR+cR,AU+Ac);
+
+  //5->Middle state wave speed
+  REAL g1=rhoR*UR*(SR-UR)-rhoL*UL*(SL-UL)+(pL-pR);
+  REAL g2=rhoR*(SR-UR)-rhoL*(SL-UL);
+  REAL SM=g1/g2;
+
+  //6->The interface flux
+  if(SL>0){
+    //F=FL
+    MF1=rhoL*UL;
+    MF2=rhoL*uL*UL+pL;
+    MF3=rhoL*HL*UL;    
+    return;
+  }
+
+  if(SL<=0&&0<SM){
+    //F=FL_star
+    REAL w1L=rhoL;              /*!< left state density */
+    REAL w2L=rhoL*uL;           /*!< left state moment rho*u */
+    REAL w3L=pL/(GAMMA-1)+0.5*rhoL*uL*uL; /*!< left state energy */
+
+    REAL F1L=rhoL*UL;           /*!< flux for density */
+    REAL F2L=rhoL*uL*UL+pL;     /*!< flux for moment */
+    REAL F3L=rhoL*HL*UL;        /*!< flux for energy */
+
+    REAL pM=rhoL*(UL-SL)*(UL-SM)+pL; /*!< middle state pressure p* */
+
+    REAL f1=SL-UL;
+    REAL f2=SL-SM;
+    REAL f3=f1/f2;
+    REAL f4=(pM-pL);
+    REAL f5=f4/f2;
+
+    REAL w1M=rhoL*f3;           /*!< middle left state density */
+    REAL w2M=rhoL*uL*f3+f5;     /*!< middle left state moment rho*u */
+    REAL w3M=w3L*f3+(-pL*UL+pM*SM)/f2; /*!< middle left state energy E */
+    
+    MF1=F1L+SL*(w1M-w1L);
+    MF2=F2L+SL*(w2M-w2L);
+    MF3=F3L+SL*(w3M-w3L);
+
+    return;
+  }
+
+  if(SM<=0&&0<=SR){
+    //F=FR_star
+    REAL w1R=rhoR;              /*!< right state density */
+    REAL w2R=rhoR*uR;           /*!< right state moment rho*u */
+    REAL w3R=pR/(GAMMA-1)+0.5*rhoR*uR*uR; /*!< right state energy */
+
+    REAL F1R=rhoR*UR;           /*!< flux for density */
+    REAL F2R=rhoR*uR*UR+pR;     /*!< flux for moment */
+    REAL F3R=rhoR*HR*UR;        /*!< flux for energy */
+
+    REAL pM=rhoL*(UL-SL)*(UL-SM)+pL; /*!< middle state pressure p* */
+
+    REAL f1=SR-UR;
+    REAL f2=SR-SM;
+    REAL f3=f1/f2;
+    REAL f4=(pM-pR);
+    REAL f5=f4/f2;
+
+    REAL w1M=rhoR*f3;           /*!< middle right state density */
+    REAL w2M=rhoR*uR*f3+f5;     /*!< middle right state moment rho*u */
+    REAL w3M=w3R*f3+(-pR*UR+pM*SM)/f2; /*!< middle right state energy E */
+    
+    MF1=F1R+SR*(w1M-w1R);
+    MF2=F2R+SR*(w2M-w2R);
+    MF3=F3R+SR*(w3M-w3R);
+
+    return;
+  }
+
+  if(SR<0){
+    //F=FR
+    MF1=rhoR*UR;
+    MF2=rhoR*uR*UR+pR;
+    MF3=rhoR*HR*UR;
+    return;
+  }
+}
+
+void NumericalSHOCK::Advance(REAL T)
+{
+
+  //set time step
+  dt=0.00001;
+
+  INTEGER ITmax=T/dt;
+  //for(INTEGER j=0;j<25000;j++)
+  for(INTEGER j=0;j<ITmax;j++)
+    {
+
+      //compute the flux
+      Flux();
+
+      //update
+      for(INTEGER i=1;i<N-1;i++)
+        {
+          Mq1[i]=Mq1[i]-dt/dx*(MF1[i]-MF1[i-1]);
+          Mq2[i]=Mq2[i]-dt/dx*(MF2[i]-MF2[i-1]);
+          Mq3[i]=Mq3[i]-dt/dx*(MF3[i]-MF3[i-1]);
+          Mq4[i]=(Mq3[i]-0.5*Mq2[i]*Mq2[i]/Mq1[i])/Mq1[i];
+        }
+      
+      cout<<"it="<<j+1<<endl;
+    }
+}
+
+void NumericalSHOCK::Solution(REAL T)
+{
+  //set up the mesh
+  MeshSet();
+
+  //set up the initial flow field
+  Init();
+
+  //time advancing
+  Advance(T);
+}

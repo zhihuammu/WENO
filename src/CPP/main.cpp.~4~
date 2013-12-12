@@ -1,0 +1,97 @@
+#include "Riemann.hh"
+
+using namespace std;
+
+
+//! Sod problem
+/*! 
+  
+ */
+void runCase0()
+{
+  //exact Riemann solver
+  SHOCK SOD(1.0,0.0,1.0,0.125,0.0,0.1);   //case 1 - Toro's shock tube
+  SOD.ExactRiemann(-0.5,0.5,0.2);
+
+  //numeircal Riemann solver
+  NumericalSHOCK Numerical_SOD(1.0,0.0,1.0,0.125,0.0,0.1);  //case 1
+  Numerical_SOD.Solution(0.2);
+  Numerical_SOD.Out();
+}
+
+//! Toro's shock tube
+/*! 
+  
+  A modified Sod problem
+ */
+void runCase1()
+{
+  //exact Riemann solver
+  SHOCK SOD(1.0,0.75,1.0,0.125,0.0,0.1);   //case 1 - Toro's shock tube
+  SOD.ExactRiemann(-0.5,0.5,0.2);
+
+  //numeircal Riemann solver
+  NumericalSHOCK Numerical_SOD(1.0,0.75,1.0,0.125,0.0,0.1);  //case 1
+  Numerical_SOD.Solution(0.2);
+  Numerical_SOD.Out();
+}
+
+void runCase2()
+{
+  SHOCK SOD2(1.0,-2.0,0.4,1.0,2.0,0.4);  //case 2
+  SOD2.ExactRiemann(-0.5,0.5,0.15);
+
+  NumericalSHOCK Numerical_SOD2(1.0,-2.0,0.4,1.0,2.0,0.4);   //case 2
+  Numerical_SOD2.Solution(0.15);
+  Numerical_SOD2.Out();
+}
+void runCase3()
+{
+  SHOCK SOD3(1.0,0.0,1000.0,1.0,0.0,0.01);  //case 3
+  SOD3.ExactRiemann(-0.5,0.5,0.012);
+
+  NumericalSHOCK Numerical_SOD3(1.0,0.0,1000.0,1.0,0.0,0.01);   //case 2
+  Numerical_SOD3.Solution(0.012);
+  Numerical_SOD3.Out();
+}
+
+void runCase4()
+{
+  SHOCK SOD4(1.0,0.0,0.01,1.0,0.0,100.0);  //case 4
+  SOD4.ExactRiemann(-0.5,0.5,0.035);
+
+  NumericalSHOCK Numerical_SOD4(1.0,0.0,0.01,1.0,0.0,100.0);   //case 2
+  Numerical_SOD4.Solution(0.035);
+  Numerical_SOD4.Out();
+}
+
+void runCase5()
+{
+  SHOCK SOD5(5.99924,19.5975,460.894,5.99242,-6.19633,46.0950);  //case 5
+  SOD5.ExactRiemann(-0.5,0.5,0.035);
+
+  NumericalSHOCK Numerical_SOD5(5.99924,19.5975,460.894,5.99242,-6.19633,46.0950);   //case 2
+  Numerical_SOD5.Solution(0.035);
+  Numerical_SOD5.Out();
+}
+void runCase6()
+{
+  SHOCK SOD6(0.445,0.698876404,3.52773,0.5,0.0,0.571);
+  SOD6.ExactRiemann(-0.5,0.5,0.15);
+
+  NumericalSHOCK Numerical_SOD6(0.445,0.698876404,3.52773,0.5,0.0,0.571);   //case 2
+  Numerical_SOD6.Solution(0.15);
+  Numerical_SOD6.Out();
+}
+
+
+int main()
+{
+
+  cout<<"Hello Riemann"<<endl;
+
+  
+  runCase0();
+  
+  return 0;
+}

@@ -1,0 +1,950 @@
+#include "Riemann.hh"
+
+using namespace std;
+
+NumericalSHOCK::NumericalSHOCK()
+{
+  //clear the variables
+  xL=xC=xR=0.0;
+  rhoL=uL=pL=rhoR=uR=pR=0.0;
+  rho_star=u_star=p_star=0.0;
+  rho_star_L=rho_star_R=0.0;
+  cL=cR=c=0.0;
+  c_star_L=c_star_R=0.0;
+  sL=sR=sHL=sTL=sHR=sTR=0.0;
+
+
+  //clear the arrays
+  Mx=0;
+  Mq1=0;  Mq2=0; Mq3=0; Mq4=0;
+  MF1=0;  MF2=0; MF3=0; 
+  
+}
+
+
+
+NumericalSHOCK::NumericalSHOCK(REAL qL1, REAL qL2, REAL qL3, REAL qR1, REAL qR2, REAL qR3)
+{
+  //clear the variables
+  xL=xC=xR=0.0;
+  rhoL=uL=pL=rhoR=uR=pR=0.0;
+  rho_star=u_star=p_star=0.0;
+  rho_star_L=rho_star_R=0.0;
+  cL=cR=c=0.0;
+  c_star_L=c_star_R=0.0;
+  sL=sR=sHL=sTL=sHR=sTR=0.0;
+
+  //clear the arrays
+  Mx=0;
+  Mq1=0;  Mq2=0; Mq3=0; Mq4=0;
+  MF1=0;  MF2=0; MF3=0; 
+
+  //set the left state
+  rhoL=qL1;
+  uL=qL2;
+  pL=qL3;
+  eL=pL/G9/rhoL;
+
+  //set the right state
+  rhoR=qR1;
+  uR=qR2;
+  pR=qR3;
+  eR=pR/G9/rhoR;
+
+  //compute speed of sound
+  cL=sqrt(GAMMA*pL/rhoL);
+  cR=sqrt(GAMMA*pR/rhoR);
+
+  //compute du=uR-uL;
+  du=uR-uL;
+}
+
+//! the destructor
+/*! 
+  
+ */
+NumericalSHOCK::~NumericalSHOCK()
+{
+  if(Mx) delete[] Mx; Mx=0;
+
+  if(Mq1) delete[] Mq1; Mq1=0; 
+  if(Mq2) delete[] Mq2; Mq2=0; 
+  if(Mq3) delete[] Mq3; Mq3=0; 
+  if(Mq4) delete[] Mq4; Mq4=0; 
+
+  if(MF1) delete[] MF1; MF1=0; 
+  if(MF2) delete[] MF2; MF2=0; 
+  if(MF3) delete[] MF3; MF3=0; 
+
+  cout<<"Done in NumericalSHOCK"<<endl;
+} 
+
+void NumericalSHOCK::MeshSet()
+{
+  N=401;
+  dx=1.0/(N-1);
+
+  Mx =new REAL[N]; 
+  
+  for(INTEGER i=0;i<N;i++)
+    Mx[i]=i*dx-0.5;
+
+
+  Mq1=new REAL[N]; 
+  Mq2=new REAL[N]; 
+  Mq3=new REAL[N]; 
+  Mq4=new REAL[N]; 
+
+  MF1=new REAL[N-1]; 
+  MF2=new REAL[N-1]; 
+  MF3=new REAL[N-1]; 
+
+  for(INTEGER i=0;i<N-1;i++)
+    {
+      MF1[i]=0;
+      MF2[i]=0;
+      MF3[i]=0;
+    }
+
+
+}
+
+void NumericalSHOCK::Init()
+{
+  for(INTEGER i=0;i<N;i++){
+    if(Mx[i]<=0.0){
+      Mq1[i]=rhoL;
+      Mq2[i]=rhoL*uL;
+      Mq3[i]=pL/G9+0.5*rhoL*uL*uL;
+      Mq4[i]=eL;
+    }
+    else{
+      Mq1[i]=rhoR;
+      Mq2[i]=rhoR*uR;
+      Mq3[i]=pR/G9+0.5*rhoR*uR*uR;
+      Mq4[i]=eR;     
+    }
+  }
+}
+
+
+void NumericalSHOCK::Out()
+{
+  ofstream ft;
+  ft.open("Sod_X_Numerical-WENO5.dat");
+  for(INTEGER i=0;i<N;i++){
+    ft<<Mx[i]<<" "
+      <<Mq1[i]<<" "
+      <<Mq2[i]/Mq1[i]<<" "
+      <<G9*(Mq3[i]-0.5*Mq2[i]*Mq2[i]/Mq1[i])<<" "
+      <<Mq4[i]<<endl;
+  }
+  ft.close();
+
+}
+
+
+void NumericalSHOCK::Flux()
+{
+  //left boundary condition - transmissive
+  Mq1[0]=Mq1[1];
+  Mq2[0]=Mq2[1];
+  Mq3[0]=Mq3[1];
+  //right boundary condition - transmissive
+  Mq1[N-1]=Mq1[N-2];
+  Mq2[N-1]=Mq2[N-2];
+  Mq3[N-1]=Mq3[N-2];
+
+
+  REAL qL1,qL2,qL3;             /*!< Left side, density,velocity,pressure */
+  REAL qR1,qR2,qR3;             /*!< Right side, density,velocity,pressure */
+
+  //loop the faces 
+  for(INTEGER i=0;i<N-1;i++)
+    {
+      qL1=Mq1[i];   
+      qL2=Mq2[i]/qL1;  
+      qL3=G9*(Mq3[i]-0.5*qL1*qL2*qL2);
+
+      qR1=Mq1[i+1];  
+      qR2=Mq2[i+1]/qR1;  
+      qR3=G9*(Mq3[i+1]-0.5*qR1*qR2*qR2);
+
+      //FaceFluxGudunov(qL1,qL2,qL3,qR1,qR2,qR3,MF1[i],MF2[i],MF3[i]);
+      FaceFluxHLLC(qL1,qL2,qL3,qR1,qR2,qR3,MF1[i],MF2[i],MF3[i]);
+    }
+}
+
+
+void NumericalSHOCK::Flux_SecondOrderBackup()
+{
+  REAL const epsi=1.0e-10;
+  //left boundary condition - transmissive
+  Mq1[0]=Mq1[1];
+  Mq2[0]=Mq2[1];
+  Mq3[0]=Mq3[1];
+  //right boundary condition - transmissive
+  Mq1[N-1]=Mq1[N-2];
+  Mq2[N-1]=Mq2[N-2];
+  Mq3[N-1]=Mq3[N-2];
+
+
+  REAL rhoA,uA,pA;
+  REAL rhoB,uB,pB;
+  REAL rhoC,uC,pC;
+  REAL rhoD,uD,pD;
+
+  REAL qL1,qL2,qL3;             /*!< Left side, density,velocity,pressure */
+  REAL qR1,qR2,qR3;             /*!< Right side, density,velocity,pressure */
+
+  //loop the faces 
+  for(INTEGER i=0;i<N-1;i++)
+    {
+
+      rhoB=Mq1[i];
+      uB=Mq2[i]/rhoB;
+      pB=G9*(Mq3[i]-0.5*rhoB*uB*uB);
+
+      rhoC=Mq1[i+1];
+      uC=Mq2[i+1]/rhoC;
+      pC=G9*(Mq3[i+1]-0.5*rhoC*uC*uC);
+
+      if(i==0){
+        //left bound
+        rhoA=rhoB;
+        uA=uB;
+        pA=pB;
+
+        rhoD=Mq1[i+2];
+        uD=Mq2[i+2]/rhoD;
+        pD=G9*(Mq3[i+2]-0.5*rhoD*uD*uD);
+      }
+      else if(i==N-2){
+        //right bound
+        rhoA=Mq1[i-1];
+        uA=Mq2[i-1]/rhoA;
+        pA=G9*(Mq3[i-1]*0.5*rhoA*uA*uA);
+
+        rhoD=rhoC;
+        uD=uC;
+        pD=pC;
+
+      }
+      else{
+        //inner cell
+        rhoA=Mq1[i-1];
+        uA=Mq2[i-1]/rhoA;
+        pA=G9*(Mq3[i-1]*0.5*rhoA*uA*uA);
+      }
+
+      REAL aR1=rhoD-rhoC;
+      REAL aR2=uD-uC;
+      REAL aR3=pD-pC;
+
+      REAL bR1=rhoC-rhoB;
+      REAL bR2=uC-uB;
+      REAL bR3=pC-pB;
+
+      REAL aL1=bR1;
+      REAL aL2=bR2;
+      REAL aL3=bR3;
+
+      REAL bL1=rhoB-rhoA;
+      REAL bL2=uB-uA;
+      REAL bL3=pB-pA;
+
+      //k=0 
+      // REAL dR1=(aR1*(bR1*bR1+epsi)+bR1*(aR1*aR1+epsi))/(aR1*aR1+bR1*bR1+2*epsi);
+      // REAL dR2=(aR2*(bR2*bR2+epsi)+bR2*(aR2*aR2+epsi))/(aR2*aR2+bR2*bR2+2*epsi);      
+      // REAL dR3=(aR3*(bR3*bR3+epsi)+bR3*(aR3*aR3+epsi))/(aR3*aR3+bR3*bR3+2*epsi);
+
+      // REAL dL1=(aL1*(bL1*bL1+epsi)+bL1*(aL1*aL1+epsi))/(aL1*aL1+bL1*bL1+2*epsi);
+      // REAL dL2=(aL2*(bL2*bL2+epsi)+bL2*(aL2*aL2+epsi))/(aL2*aL2+bL2*bL2+2*epsi);      
+      // REAL dL3=(aL3*(bL3*bL3+epsi)+bL3*(aL3*aL3+epsi))/(aL3*aL3+bL3*bL3+2*epsi);
+
+      //k=1/3
+      REAL dR1=(bR1*(2*aR1*aR1+epsi)+aR1*(bR1*bR1+2*epsi))/(2*aR1*aR1+2*bR1*bR1-aR1*bR1+3*epsi);
+      REAL dR2=(bR2*(2*aR2*aR2+epsi)+aR2*(bR2*bR2+2*epsi))/(2*aR2*aR2+2*bR2*bR2-aR2*bR2+3*epsi);
+      REAL dR3=(bR3*(2*aR3*aR3+epsi)+aR3*(bR3*bR3+2*epsi))/(2*aR3*aR3+2*bR3*bR3-aR3*bR3+3*epsi);
+
+      REAL dL1=(bL1*(2*aL1*aL1+epsi)+aL1*(bL1*bL1+2*epsi))/(2*aL1*aL1+2*bL1*bL1-aL1*bL1+3*epsi);
+      REAL dL2=(bL2*(2*aL2*aL2+epsi)+aL2*(bL2*bL2+2*epsi))/(2*aL2*aL2+2*bL2*bL2-aL2*bL2+3*epsi);
+      REAL dL3=(bL3*(2*aL3*aL3+epsi)+aL3*(bL3*bL3+2*epsi))/(2*aL3*aL3+2*bL3*bL3-aL3*bL3+3*epsi);
+
+      
+
+      qL1=Mq1[i];   
+      qL2=Mq2[i]/qL1;  
+      qL3=G9*(Mq3[i]-0.5*qL1*qL2*qL2);
+
+        
+      qR1=Mq1[i+1];  
+      qR2=Mq2[i+1]/qR1;  
+      qR3=G9*(Mq3[i+1]-0.5*qR1*qR2*qR2);
+
+      
+      qL1+=0.5*dL1;
+      qL2+=0.5*dL2;
+      qL3+=0.5*dL3;
+
+      qR1-=0.5*dR1;
+      qR2-=0.5*dR2;
+      qR3-=0.5*dR3;
+      
+      //FaceFluxGudunov(qL1,qL2,qL3,qR1,qR2,qR3,MF1[i],MF2[i],MF3[i]);
+      FaceFluxHLLC(qL1,qL2,qL3,qR1,qR2,qR3,MF1[i],MF2[i],MF3[i]);
+
+    }
+}
+
+
+void NumericalSHOCK::Flux_MUSCL()
+{
+  REAL const epsi=1.0e-12;
+  //left boundary condition - transmissive
+  Mq1[0]=Mq1[1];
+  Mq2[0]=Mq2[1];
+  Mq3[0]=Mq3[1];
+
+  //right boundary condition - transmissive
+  Mq1[N-1]=Mq1[N-2];
+  Mq2[N-1]=Mq2[N-2];
+  Mq3[N-1]=Mq3[N-2];
+
+  REAL rhoA,uA,pA;
+  REAL rhoB,uB,pB;
+  REAL rhoC,uC,pC;
+  REAL rhoD,uD,pD;
+
+  REAL qL1,qL2,qL3;             /*!< Left side, density,velocity,pressure */
+  REAL qR1,qR2,qR3;             /*!< Right side, density,velocity,pressure */
+
+  //loop the faces 
+  for(INTEGER i=0;i<N-1;i++)
+    {
+
+      rhoB=Mq1[i];
+      uB=Mq2[i]/rhoB;
+      pB=G9*(Mq3[i]-0.5*rhoB*uB*uB);
+
+      rhoC=Mq1[i+1];
+      uC=Mq2[i+1]/rhoC;
+      pC=G9*(Mq3[i+1]-0.5*rhoC*uC*uC);
+
+      if(i==0){
+        //left bound
+        rhoA=rhoB;
+        uA=uB;
+        pA=pB;
+
+        rhoD=Mq1[i+2];
+        uD=Mq2[i+2]/rhoD;
+        pD=G9*(Mq3[i+2]-0.5*rhoD*uD*uD);
+      }
+      else if(i==N-2){
+        //right bound
+        rhoA=Mq1[i-1];
+        uA=Mq2[i-1]/rhoA;
+        pA=G9*(Mq3[i-1]*0.5*rhoA*uA*uA);
+
+        rhoD=rhoC;
+        uD=uC;
+        pD=pC;
+
+      }
+      else{
+        //inner cell
+        rhoA=Mq1[i-1];
+        uA=Mq2[i-1]/rhoA;
+        pA=G9*(Mq3[i-1]-0.5*rhoA*uA*uA);
+
+        rhoD=Mq1[i+2];
+        uD=Mq2[i+2]/rhoD;
+        pD=G9*(Mq3[i+2]-0.5*rhoD*uD*uD);
+      }
+
+      REAL aR1=rhoD-rhoC;
+      REAL aR2=uD-uC;
+      REAL aR3=pD-pC;
+
+      REAL bR1=rhoC-rhoB;
+      REAL bR2=uC-uB;
+      REAL bR3=pC-pB;
+
+      REAL aL1=bR1;
+      REAL aL2=bR2;
+      REAL aL3=bR3;
+
+      REAL bL1=rhoB-rhoA;
+      REAL bL2=uB-uA;
+      REAL bL3=pB-pA;
+
+      //Limiter
+      REAL sL1=max(0.0,(2*bL1*aL1+epsi)/(bL1*bL1+aL1*aL1+epsi));
+      REAL sL2=max(0.0,(2*bL2*aL2+epsi)/(bL2*bL2+aL2*aL2+epsi));
+      REAL sL3=max(0.0,(2*bL3*aL3+epsi)/(bL3*bL3+aL3*aL3+epsi));
+
+      REAL sR1=max(0.0,(2*aR1*aL1+epsi)/(aR1*aR1+aL1*aL1+epsi));
+      REAL sR2=max(0.0,(2*aR2*aL2+epsi)/(aR2*aR2+aL2*aL2+epsi));
+      REAL sR3=max(0.0,(2*aR3*aL3+epsi)/(aR3*aR3+aL3*aL3+epsi));
+
+      REAL k=1.0/3.0;
+
+      //REAL dL1=((1-k*sL1)*bL1+(1+k*sL1)*aL1)*sL1/2.0;
+      //REAL dL2=((1-k*sL2)*bL2+(1+k*sL2)*aL2)*sL2/2.0;      
+      //REAL dL3=((1-k*sL3)*bL3+(1+k*sL3)*aL3)*sL3/2.0;      
+
+      //REAL dR1=((1-k*sR1)*aR1+(1+k*sR1)*aL1)*sR1/2.0;
+      //REAL dR2=((1-k*sR2)*aR2+(1+k*sR2)*aL2)*sR1/2.0;
+      //REAL dR3=((1-k*sR3)*aR3+(1+k*sR3)*aL3)*sR1/2.0;
+
+       REAL dR1=(bR1*(2*aR1*aR1+epsi)+aR1*(bR1*bR1+2*epsi))/(2*aR1*aR1+2*bR1*bR1-aR1*bR1+3*epsi);
+       REAL dR2=(bR2*(2*aR2*aR2+epsi)+aR2*(bR2*bR2+2*epsi))/(2*aR2*aR2+2*bR2*bR2-aR2*bR2+3*epsi);
+       REAL dR3=(bR3*(2*aR3*aR3+epsi)+aR3*(bR3*bR3+2*epsi))/(2*aR3*aR3+2*bR3*bR3-aR3*bR3+3*epsi);
+
+       REAL dL1=(bL1*(2*aL1*aL1+epsi)+aL1*(bL1*bL1+2*epsi))/(2*aL1*aL1+2*bL1*bL1-aL1*bL1+3*epsi);
+       REAL dL2=(bL2*(2*aL2*aL2+epsi)+aL2*(bL2*bL2+2*epsi))/(2*aL2*aL2+2*bL2*bL2-aL2*bL2+3*epsi);
+       REAL dL3=(bL3*(2*aL3*aL3+epsi)+aL3*(bL3*bL3+2*epsi))/(2*aL3*aL3+2*bL3*bL3-aL3*bL3+3*epsi);
+
+
+      // qL1=Mq1[i];   
+      // qL2=Mq2[i]/qL1;  
+      // qL3=G9*(Mq3[i]-0.5*qL1*qL2*qL2);
+
+        
+      // qR1=Mq1[i+1];  
+      // qR2=Mq2[i+1]/qR1;  
+      // qR3=G9*(Mq3[i+1]-0.5*qR1*qR2*qR2);
+
+      qL1=rhoB;
+      qL2=uB;
+      qL3=pB;
+
+      qR1=rhoC;
+      qR2=uC;
+      qR3=pC;
+
+      
+      qL1+=0.5*dL1;
+      qL2+=0.5*dL2;
+      qL3+=0.5*dL3;
+
+      qR1-=0.5*dR1;
+      qR2-=0.5*dR2;
+      qR3-=0.5*dR3;
+      
+      //FaceFluxGudunov(qL1,qL2,qL3,qR1,qR2,qR3,MF1[i],MF2[i],MF3[i]);
+      FaceFluxHLLC(qL1,qL2,qL3,qR1,qR2,qR3,MF1[i],MF2[i],MF3[i]);
+
+    }
+}
+
+void NumericalSHOCK::Flux_WENO3()
+{
+  REAL const epsi=1.0e-12;
+
+  //left boundary condition - transmissive
+  Mq1[0]=Mq1[1];
+  Mq2[0]=Mq2[1];
+  Mq3[0]=Mq3[1];
+  //right boundary condition - transmissive
+  Mq1[N-1]=Mq1[N-2];
+  Mq2[N-1]=Mq2[N-2];
+  Mq3[N-1]=Mq3[N-2];
+
+  REAL rhoA,uA,pA;
+  REAL rhoB,uB,pB;
+  REAL rhoC,uC,pC;
+  REAL rhoD,uD,pD;
+
+  REAL qL1,qL2,qL3;             /*!< Left side, density,velocity,pressure */
+  REAL qR1,qR2,qR3;             /*!< Right side, density,velocity,pressure */
+
+  REAL ftmp;
+  
+  //loop the faces 
+  for(INTEGER i=0;i<N-1;i++)
+    {
+
+      rhoB=Mq1[i];
+      uB=Mq2[i]/rhoB;
+      pB=G9*(Mq3[i]-0.5*rhoB*uB*uB);
+
+      rhoC=Mq1[i+1];
+      uC=Mq2[i+1]/rhoC;
+      pC=G9*(Mq3[i+1]-0.5*rhoC*uC*uC);
+
+      if(i==0){
+        //left bound
+        rhoA=rhoB;
+        uA=uB;
+        pA=pB;
+
+        rhoD=Mq1[i+2];
+        uD=Mq2[i+2]/rhoD;
+        pD=G9*(Mq3[i+2]-0.5*rhoD*uD*uD);
+      }
+      else if(i==N-2){
+        //right bound
+        rhoA=Mq1[i-1];
+        uA=Mq2[i-1]/rhoA;
+        pA=G9*(Mq3[i-1]-0.5*rhoA*uA*uA);
+
+        rhoD=rhoC;
+        uD=uC;
+        pD=pC;
+
+      }
+      else{
+        //inner cell
+        rhoA=Mq1[i-1];
+        uA=Mq2[i-1]/rhoA;
+        pA=G9*(Mq3[i-1]-0.5*rhoA*uA*uA);
+
+        rhoD=Mq1[i+2];
+        uD=Mq2[i+2]/rhoD;
+        pD=G9*(Mq3[i+2]-0.5*rhoD*uD*uD);
+      }
+
+      //left side qL
+      /*
+      {
+        REAL s1rho=(rhoB-rhoA)*(rhoB-rhoA);
+        REAL s1u  =(uB-uA)*(uB-uA);
+        REAL s1p  =(pB-pA)*(pB-pA);
+
+        REAL s2rho=(rhoB-rhoC)*(rhoB-rhoC);
+        REAL s2u  =(uB-uC)*(uB-uC);
+        REAL s2p  =(pB-pC)*(pB-pC);
+
+        REAL const C1=1.0/3.0;
+        REAL const C2=2.0/3.0;
+
+        REAL alpha1rho=C1/(s1rho+epsi)/(s1rho+epsi);
+        REAL alpha1u  =C1/(s1u+epsi)/(s1u+epsi);
+        REAL alpha1p  =C1/(s1p+epsi)/(s2p+epsi);
+
+        REAL alpha2rho=C2/(s2rho+epsi)/(s2rho+epsi);
+        REAL alpha2u  =C2/(s2u+epsi)/(s2u+epsi);
+        REAL alpha2p  =C2/(s2p+epsi)/(s2p+epsi);
+
+        REAL w1rho = alpha1rho/(alpha1rho+alpha2rho);
+        REAL w1u   = alpha1u/(alpha1u+alpha2u);
+        REAL w1p   = alpha1p/(alpha1p+alpha2p);
+
+        REAL w2rho = alpha2rho/(alpha1rho+alpha2rho);
+        REAL w2u   = alpha2u/(alpha1u+alpha2u);
+        REAL w2p   = alpha2p/(alpha1p+alpha2p);
+
+        qL1= w1rho*(-0.5*rhoA+1.5*rhoB)+w2rho*(0.5*rhoB+0.5*rhoC);  //rho
+        qL2= w1u*(-0.5*uA+1.5*uB)+w2u*(0.5*uB+0.5*uC);              //u
+        qL3= w1p*(-0.5*pA+1.5*pB)+w2p*(0.5*pB+0.5*pC);              //p
+      }
+      */
+
+      REAL C1=1.0/3.0;
+      REAL C2=2.0/3.0;
+
+      ftmp=rhoB-rhoA; REAL s1rho=ftmp*ftmp;
+      ftmp=uB-uA;     REAL s1u  =ftmp*ftmp;
+      ftmp=pB-pA;     REAL s1p  =ftmp*ftmp;
+
+      ftmp=rhoB-rhoC; REAL s2rho=ftmp*ftmp;
+      ftmp=uB-uC;     REAL s2u  =ftmp*ftmp;
+      ftmp=pB-pC;     REAL s2p  =ftmp*ftmp;
+
+      ftmp=s1rho+epsi; REAL alpha1rho=C1/ftmp/ftmp;
+      ftmp=s1u+epsi;   REAL alpha1u  =C1/ftmp/ftmp;
+      ftmp=s1p+epsi;   REAL alpha1p  =C1/ftmp/ftmp;
+
+      ftmp=s2rho+epsi;  REAL alpha2rho=C2/ftmp/ftmp;
+      ftmp=s2u+epsi;    REAL alpha2u  =C2/ftmp/ftmp;
+      ftmp=s2p+epsi;    REAL alpha2p  =C2/ftmp/ftmp;
+
+      REAL w1rho = alpha1rho/(alpha1rho+alpha2rho);
+      REAL w1u   = alpha1u/(alpha1u+alpha2u);
+      REAL w1p   = alpha1p/(alpha1p+alpha2p);
+
+      REAL w2rho = 1.0-w1rho;
+      REAL w2u   = 1.0-w1u;
+      REAL w2p   = 1.0-w1p;
+
+      qL1= (w1rho*(3*rhoB-rhoA)+w2rho*(rhoB+rhoC))*0.5;  //rho
+      qL2= (w1u*(3*uB-uA)+w2u*(uB+uC))*0.5;              //u
+      qL3= (w1p*(3*pB-pA)+w2p*(pB+pC))*0.5;              //p
+      
+      //right side qR
+      /*
+      {
+        REAL s1rho = (rhoB-rhoC)*(rhoB-rhoC);
+        REAL s1u   = (uB-uC)*(uB-uC);
+        REAL s1p   = (pB-pC)*(pB-pC);
+
+        REAL s2rho = (rhoC-rhoD)*(rhoC-rhoD);
+        REAL s2u   = (uC-uD)*(uC-uD);
+        REAL s2p   = (pC-pD)*(pC-pD);
+
+        REAL const C1=2.0/3.0;
+        REAL const C2=1.0/3.0;
+
+        REAL alpha1rho=C1/(s1rho+epsi)/(s1rho+epsi);
+        REAL alpha1u  =C1/(s1u+epsi)/(s1u+epsi);
+        REAL alpha1p  =C1/(s1p+epsi)/(s2p+epsi);
+
+        REAL alpha2rho=C2/(s2rho+epsi)/(s2rho+epsi);
+        REAL alpha2u  =C2/(s2u+epsi)/(s2u+epsi);
+        REAL alpha2p  =C2/(s2p+epsi)/(s2p+epsi);
+
+        REAL w1rho = alpha1rho/(alpha1rho+alpha2rho);
+        REAL w1u   = alpha1u/(alpha1u+alpha2u);
+        REAL w1p   = alpha1p/(alpha1p+alpha2p);
+
+        REAL w2rho = alpha2rho/(alpha1rho+alpha2rho);
+        REAL w2u   = alpha2u/(alpha1u+alpha2u);
+        REAL w2p   = alpha2p/(alpha1p+alpha2p);
+
+        qR1= w1rho*(0.5*rhoB+0.5*rhoC)+w2rho*(1.5*rhoC-0.5*rhoD);
+        qR2= w1u*(0.5*uB+0.5*uC)+w2u*(1.5*uC-0.5*uD);
+        qR3= w1p*(0.5*pB+0.5*pC)+w2p*(1.5*pC-0.5*pD);
+      }      
+      */
+     
+      C1=2.0/3.0;
+      C2=1.0/3.0;
+
+      s1rho = s2rho;
+      s1u   = s2u;
+      s1p   = s2p;
+
+      ftmp=rhoC-rhoD;  s2rho = ftmp*ftmp;
+      ftmp=uC-uD;      s2u   = ftmp*ftmp;
+      ftmp=pC-pD;      s2p   = ftmp*ftmp;
+
+      ftmp=s1rho+epsi; alpha1rho=C1/ftmp/ftmp;
+      ftmp=s1u+epsi;   alpha1u  =C1/ftmp/ftmp;
+      ftmp=s1p+epsi;   alpha1p  =C1/ftmp/ftmp;
+
+      ftmp=s2rho+epsi;  alpha2rho=C2/ftmp/ftmp;
+      ftmp=s2u+epsi;    alpha2u  =C2/ftmp/ftmp;
+      ftmp=s2p+epsi;    alpha2p  =C2/ftmp/ftmp;
+
+      w1rho = alpha1rho/(alpha1rho+alpha2rho);
+      w1u   = alpha1u/(alpha1u+alpha2u);
+      w1p   = alpha1p/(alpha1p+alpha2p);
+
+      w2rho = 1.0-w1rho;
+      w2u   = 1.0-w1u;
+      w2p   = 1.0-w1p;
+
+      qR1= (w1rho*(rhoB+rhoC)+w2rho*(3*rhoC-rhoD))*0.5;
+      qR2= (w1u*(uB+uC)+w2u*(3*uC-uD))*0.5;
+      qR3= (w1p*(pB+pC)+w2p*(3*pC-pD))*0.5;
+    
+      //FaceFluxGudunov(qL1,qL2,qL3,qR1,qR2,qR3,MF1[i],MF2[i],MF3[i]);
+      FaceFluxHLLC(qL1,qL2,qL3,qR1,qR2,qR3,MF1[i],MF2[i],MF3[i]);
+    }
+
+ }
+
+void NumericalSHOCK::Flux_WENO5()
+{
+  REAL const epsi=1.0e-12;
+  //left boundary condition - transmissive
+  Mq1[0]=Mq1[1];
+  Mq2[0]=Mq2[1];
+  Mq3[0]=Mq3[1];
+  //right boundary condition - transmissive
+  Mq1[N-1]=Mq1[N-2];
+  Mq2[N-1]=Mq2[N-2];
+  Mq3[N-1]=Mq3[N-2];
+
+  REAL rhoA,uA,pA;   //point: i-2
+  REAL rhoB,uB,pB;   //point: i-1
+  REAL rhoC,uC,pC;   //point: i
+  REAL rhoD,uD,pD;   //point: i+1
+  REAL rhoE,uE,pE;   //point: i+2
+  REAL rhoF,uF,pF;   //point: i+3
+
+  REAL qL1,qL2,qL3;             /*!< Left side, density,velocity,pressure */
+  REAL qR1,qR2,qR3;             /*!< Right side, density,velocity,pressure */
+
+  REAL ftmp;
+
+  //loop the faces
+  for(INTEGER i=0;i<N-1;i++)
+    {
+      INTEGER iA=i-2;
+      INTEGER iB=i-1;
+      INTEGER iC=i;
+      INTEGER iD=i+1;
+      INTEGER iE=i+2;
+      INTEGER iF=i+3;
+
+      //point A
+      if(iA>=0)
+        {//in the domain
+          rhoA = Mq1[iA];
+          uA   = Mq2[iA]/rhoA;
+          pA   = G9*(Mq3[iA]-0.5*rhoA*uA*uA);
+        }
+      else
+        {//outside of the domain
+          rhoA = Mq1[0];
+          uA   = Mq2[0]/rhoA;
+          pA   = G9*(Mq3[0]-0.5*rhoA*uA*uA);
+        }
+       
+      //point B
+      if(iB>=0)
+        {//in the domain
+          rhoB = Mq1[iB];
+          uB   = Mq2[iB]/rhoB;
+          pB   = G9*(Mq3[iB]-0.5*rhoB*uB*uB);
+        
+        }
+      else
+        {
+        
+        }
+
+      //point C
+      if(iC>=0){
+        
+      }
+      else{
+        
+      }
+
+      //point D
+      if(iD<=N-1){
+        
+      }
+      else{
+        
+      }
+
+      //point E
+      if(iE<=N-1){
+        
+      }
+      else{
+        
+      }
+
+      //point F
+      if(iF<=N-1){
+        
+      }
+      else{
+        
+      }
+
+      
+    }
+
+}
+
+void NumericalSHOCK::FaceFluxGudunov(REAL qL1, REAL qL2, REAL qL3, 
+                                     REAL qR1, REAL qR2, REAL qR3,
+                                     REAL& MF1, REAL& MF2, REAL& MF3)
+{
+  REAL q1,q2,q3,q4;             /*!< density,velocity,pressure,internal energy */
+  LocalRiemann(qL1,qL2,qL3,qR1,qR2,qR3,q1,q2,q3,q4);
+  MF1=q1*q2;
+  MF2=q1*q2*q2+q3;
+  MF3=(q3*GAMMA/G9+0.5*q1*q2*q2)*q2;
+}
+
+//! compute the interface flux F
+/*! 
+  
+  \param qL1 left state density
+  \param qL2 left state velocity
+  \param qL3 left state pressure
+  \param qR1 right state density
+  \param qR2 right state velocity
+  \param qR3 right state pressure
+  \param MF1 flux for density
+  \param MF2 flux for moment
+  \param MF3 flux for total energy
+*/
+void NumericalSHOCK::FaceFluxHLLCBACKUP(REAL rhoL, REAL uL, REAL pL, 
+                                  REAL rhoR, REAL uR, REAL pR,
+                                  REAL& MF1, REAL& MF2, REAL& MF3)
+{
+  //0->basic variables for left and right state
+  REAL cL=sqrt(GAMMA*pL/rhoL);  /*!< sound speed */
+  REAL HL=GAMMA/(GAMMA-1)*pL/rhoL+0.5*uL*uL; /*!< enthapy */
+
+  REAL cR=sqrt(GAMMA*pR/rhoR);   /*!< soud speed */
+  REAL HR=GAMMA/(GAMMA-1)*pR/rhoR+0.5*uR*uR; /*!< enthapy */
+
+  //1->Roe's average
+  REAL f=sqrt(rhoR/rhoL);
+  REAL Au=(uL+uR*f)/(1+f);
+  REAL AH=(HL+HR*f)/(1+f);
+  REAL Ac=sqrt((GAMMA-1)*(AH-0.5*uL*uL));
+
+  //2->Normal velocity
+  REAL AU=Au;
+
+  //3->Left state wave speed
+  REAL UL=uL;
+  REAL SL=min(UL-cL,AU-Ac);
+
+  //4->Right state wave speed
+  REAL UR=uR;
+  REAL SR=max(UR+cR,AU+Ac);
+
+  //5->Middle state wave speed
+  REAL g1=rhoR*UR*(SR-UR)-rhoL*UL*(SL-UL)+(pL-pR);
+  REAL g2=rhoR*(SR-UR)-rhoL*(SL-UL);
+  REAL SM=g1/g2;
+
+  //6->The interface flux
+  if(SL>0){
+    //F=FL
+    MF1=rhoL*UL;
+    MF2=rhoL*uL*UL+pL;
+    MF3=rhoL*HL*UL;    
+    return;
+  }
+
+  if(SL<=0&&0<SM){
+    //F=FL_star
+    REAL w1L=rhoL;              /*!< left state density */
+    REAL w2L=rhoL*uL;           /*!< left state moment rho*u */
+    REAL w3L=pL/(GAMMA-1)+0.5*rhoL*uL*uL; /*!< left state energy */
+
+    REAL F1L=rhoL*UL;           /*!< flux for density */
+    REAL F2L=rhoL*uL*UL+pL;     /*!< flux for moment */
+    REAL F3L=rhoL*HL*UL;        /*!< flux for energy */
+
+    REAL pM=rhoL*(UL-SL)*(UL-SM)+pL; /*!< middle state pressure p* */
+
+    REAL f1=SL-UL;
+    REAL f2=SL-SM;
+    REAL f3=f1/f2;
+    REAL f4=(pM-pL);
+    REAL f5=f4/f2;
+
+    REAL w1M=rhoL*f3;           /*!< middle left state density */
+    REAL w2M=rhoL*uL*f3+f5;     /*!< middle left state moment rho*u */
+    REAL w3M=w3L*f3+(-pL*UL+pM*SM)/f2; /*!< middle left state energy E */
+    
+    MF1=F1L+SL*(w1M-w1L);
+    MF2=F2L+SL*(w2M-w2L);
+    MF3=F3L+SL*(w3M-w3L);
+
+    return;
+  }
+
+  if(SM<=0&&0<=SR){
+    //F=FR_star
+    REAL w1R=rhoR;              /*!< right state density */
+    REAL w2R=rhoR*uR;           /*!< right state moment rho*u */
+    REAL w3R=pR/(GAMMA-1)+0.5*rhoR*uR*uR; /*!< right state energy */
+
+    REAL F1R=rhoR*UR;           /*!< flux for density */
+    REAL F2R=rhoR*uR*UR+pR;     /*!< flux for moment */
+    REAL F3R=rhoR*HR*UR;        /*!< flux for energy */
+
+    REAL pM=rhoL*(UL-SL)*(UL-SM)+pL; /*!< middle state pressure p* */
+
+    REAL f1=SR-UR;
+    REAL f2=SR-SM;
+    REAL f3=f1/f2;
+    REAL f4=(pM-pR);
+    REAL f5=f4/f2;
+
+    REAL w1M=rhoR*f3;           /*!< middle right state density */
+    REAL w2M=rhoR*uR*f3+f5;     /*!< middle right state moment rho*u */
+    REAL w3M=w3R*f3+(-pR*UR+pM*SM)/f2; /*!< middle right state energy E */
+    
+    MF1=F1R+SR*(w1M-w1R);
+    MF2=F2R+SR*(w2M-w2R);
+    MF3=F3R+SR*(w3M-w3R);
+
+    return;
+  }
+
+  if(SR<0){
+    //F=FR
+    MF1=rhoR*UR;
+    MF2=rhoR*uR*UR+pR;
+    MF3=rhoR*HR*UR;
+    return;
+  }
+}
+
+
+void NumericalSHOCK::FaceFluxHLLC(REAL rhoL, REAL uL, REAL pL, 
+                                  REAL rhoR, REAL uR, REAL pR,
+                                  REAL& MF1, REAL& MF2, REAL& MF3)
+{
+  REAL wL[4],wR[4];
+  REAL kas,kbs,Lab;
+  REAL ddt, GI[4];
+  wL[0]=rhoL;
+  wL[1]=rhoL*uL;
+  wL[2]=0;
+  wL[3]=pL/(GAMMA-1)+0.5*rhoL*uL*uL;
+
+  wR[0]=rhoR;
+  wR[1]=rhoR*uR;
+  wR[2]=0;
+  wR[3]=pR/(GAMMA-1)+0.5*rhoR*uR*uR;
+
+  kas=1.0;
+  kbs=0.0;
+  Lab=1.0;
+
+  riemann_hllc_2d_(wL,wR,kas,kbs,Lab,ddt,GI);
+
+  MF1=GI[0];
+  MF2=GI[1];
+  MF3=GI[3];
+  
+}
+
+void NumericalSHOCK::Advance(REAL T)
+{
+
+  //set time step
+  dt=0.00001;
+
+  INTEGER ITmax=T/dt;
+  //for(INTEGER j=0;j<25000;j++)
+  for(INTEGER j=0;j<ITmax;j++)
+    {
+
+      //compute the flux
+      //Flux();
+      //Flux_MUSCL();
+      //Flux_WENO3();
+      Flux_WENO5();
+
+      //update
+      for(INTEGER i=1;i<N-1;i++)
+        {
+          Mq1[i]=Mq1[i]-dt/dx*(MF1[i]-MF1[i-1]);
+          Mq2[i]=Mq2[i]-dt/dx*(MF2[i]-MF2[i-1]);
+          Mq3[i]=Mq3[i]-dt/dx*(MF3[i]-MF3[i-1]);
+          Mq4[i]=(Mq3[i]-0.5*Mq2[i]*Mq2[i]/Mq1[i])/Mq1[i];
+        }
+      
+      cout<<"it="<<j+1<<endl;
+    }
+}
+
+void NumericalSHOCK::Solution(REAL T)
+{
+  //set up the mesh
+  MeshSet();
+
+  //set up the initial flow field
+  Init();
+
+  //time advancing
+  Advance(T);
+}

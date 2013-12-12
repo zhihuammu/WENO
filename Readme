@@ -1,0 +1,35 @@
+Jacket/
+|-- bin
+|-- demo
+|-- doc
+|-- include
+|-- lib
+|-- model
+|-- obj
+`-- src
+    |-- C
+    `-- F90
+
+1. Introduction
+The Riemann Program is to solver the Riemann problems for fluid dynamics.
+
+Exact Riemann Solvers:
+  Gudnov Fist order scheme
+
+
+Approximate Riemann Solver:
+  HLLC scheme
+
+
+Input:
+ 
+  shock tube left and right state variables
+  time
+  
+Output:
+  SOD_X_Exact.dat        #The exact solution
+  SOD_X_Numerical.dat    #The numerical solution
+
+
+
+
